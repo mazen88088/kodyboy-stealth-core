@@ -1,7 +1,7 @@
 {
   "name": "onyx-stealth",
   "version": "1.0.0",
-  "main": "server.js",
+  "main": "node.js",
   "scripts": {
     "start": "node server.js"
   },
